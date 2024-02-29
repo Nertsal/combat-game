@@ -5,6 +5,13 @@ use std::collections::VecDeque;
 const CURSOR_TRAIL_TIME: f32 = 0.4;
 const CURSOR_FADE_TIME: f32 = 0.2;
 
+const KEYS_ATTACK: [MouseButton; 1] = [MouseButton::Left];
+const KEYS_DEFEND: [MouseButton; 1] = [MouseButton::Right];
+
+const COLOR_IDLE: Color = Color::WHITE;
+const COLOR_ATTACK: Color = Color::RED;
+const COLOR_DEFEND: Color = Color::BLUE;
+
 pub struct State {
     pub geng: Geng,
     pub assets: Rc<Assets>,
@@ -13,10 +20,12 @@ pub struct State {
     pub texture_target: Aabb2<f32>,
 
     pub camera: Camera2d,
+    pub real_time: Time,
+
     /// World position of the cursor.
     pub cursor_pos: vec2<Coord>,
     pub cursor_history: VecDeque<CursorEntry>,
-    pub real_time: Time,
+    pub cursor_state: CursorState,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -25,6 +34,14 @@ struct CursorEntry {
     pub pos: vec2<Coord>,
     /// Time at which the position was registered.
     pub time: Time,
+    pub state: CursorState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CursorState {
+    Idle,
+    Attack,
+    Defend,
 }
 
 impl State {
@@ -45,9 +62,11 @@ impl State {
                 rotation: Angle::ZERO,
                 fov: 10.0,
             },
+            real_time: Time::ZERO,
+
             cursor_pos: vec2::ZERO,
             cursor_history: VecDeque::new(),
-            real_time: Time::ZERO,
+            cursor_state: CursorState::Idle,
         }
     }
 }
@@ -57,27 +76,65 @@ impl geng::State for State {
         let delta_time = r32(delta_time as f32);
         self.real_time += delta_time;
 
+        {
+            // Validate cursor state (in case some event is missed, e.g. when window loses focus)
+            let attack = geng_utils::key::is_key_pressed(self.geng.window(), KEYS_ATTACK);
+            let defend = geng_utils::key::is_key_pressed(self.geng.window(), KEYS_DEFEND);
+            match self.cursor_state {
+                CursorState::Idle => {
+                    if attack {
+                        self.cursor_state = CursorState::Attack;
+                    } else if defend {
+                        self.cursor_state = CursorState::Defend;
+                    }
+                }
+                CursorState::Attack => {
+                    if !attack {
+                        self.cursor_state = CursorState::Idle;
+                    }
+                }
+                CursorState::Defend => {
+                    if !defend {
+                        self.cursor_state = CursorState::Idle;
+                    }
+                }
+            }
+        }
+
         self.cursor_history
             .retain(|entry| self.real_time - entry.time < r32(CURSOR_TRAIL_TIME));
     }
 
     fn handle_event(&mut self, event: geng::Event) {
-        match event {
-            geng::Event::CursorMove { position } => {
-                let position = position.as_f32();
-                let position = (position - self.texture_target.bottom_left())
-                    / self.framebuffer_size.as_f32()
-                    * self.texture.size().as_f32();
-                self.cursor_pos = self
-                    .camera
-                    .screen_to_world(self.texture.size().as_f32(), position)
-                    .as_r32();
-                self.cursor_history.push_back(CursorEntry {
-                    pos: self.cursor_pos,
-                    time: self.real_time,
-                });
+        // Cursor state
+        if geng_utils::key::is_event_press(&event, KEYS_ATTACK) {
+            self.cursor_state = CursorState::Attack;
+        } else if geng_utils::key::is_event_release(&event, KEYS_ATTACK) {
+            if let CursorState::Attack = self.cursor_state {
+                self.cursor_state = CursorState::Idle;
             }
-            _ => {}
+        } else if geng_utils::key::is_event_press(&event, KEYS_DEFEND) {
+            self.cursor_state = CursorState::Defend;
+        } else if geng_utils::key::is_event_release(&event, KEYS_DEFEND) {
+            if let CursorState::Defend = self.cursor_state {
+                self.cursor_state = CursorState::Idle;
+            }
+        }
+
+        if let geng::Event::CursorMove { position } = event {
+            let position = position.as_f32();
+            let position = (position - self.texture_target.bottom_left())
+                / self.framebuffer_size.as_f32()
+                * self.texture.size().as_f32();
+            self.cursor_pos = self
+                .camera
+                .screen_to_world(self.texture.size().as_f32(), position)
+                .as_r32();
+            self.cursor_history.push_back(CursorEntry {
+                pos: self.cursor_pos,
+                time: self.real_time,
+                state: self.cursor_state,
+            });
         }
     }
 
@@ -104,7 +161,11 @@ impl geng::State for State {
                         / r32(CURSOR_TRAIL_TIME - CURSOR_FADE_TIME);
                     let t = crate::util::smoothstep(t).as_f32();
 
-                    let color_a = Color::WHITE;
+                    let color_a = match entry.state {
+                        CursorState::Idle => COLOR_IDLE,
+                        CursorState::Attack => COLOR_ATTACK,
+                        CursorState::Defend => COLOR_DEFEND,
+                    };
                     let color_b = Color { a: 0.0, ..color_a };
 
                     draw2d::ColoredVertex {
