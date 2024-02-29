@@ -32,7 +32,9 @@ pub struct Cursor {
 
 #[derive(Debug, Clone)]
 pub struct Player {
-    pub pos: vec2<Coord>,
+    pub position: vec2<Coord>,
+    pub velocity: vec2<Coord>,
+    pub target_move_dir: vec2<Coord>,
     pub reach: Coord,
 }
 
@@ -90,7 +92,9 @@ impl State {
                 last_state: CursorState::Idle,
             },
             player: Player {
-                pos: vec2::ZERO,
+                position: vec2::ZERO,
+                velocity: vec2::ZERO,
+                target_move_dir: vec2::ZERO,
                 reach: r32(2.0),
             },
 
@@ -189,6 +193,27 @@ impl geng::State for State {
         self.cursor
             .history
             .retain(|entry| self.real_time - entry.time < self.config.cursor.trail_time);
+
+        let mut move_dir = vec2::<f32>::ZERO;
+        if geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.up) {
+            move_dir.y += 1.0;
+        }
+        if geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.down) {
+            move_dir.y -= 1.0;
+        }
+        if geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.left) {
+            move_dir.x -= 1.0;
+        }
+        if geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.right) {
+            move_dir.x += 1.0;
+        }
+        self.player.target_move_dir = move_dir.as_r32();
+
+        let target_velocity = self.player.target_move_dir * self.config.player.walk_speed;
+        self.player.velocity += (target_velocity - self.player.velocity)
+            .clamp_len(..=self.config.player.acceleration * delta_time);
+
+        self.player.position += self.player.velocity * delta_time;
     }
 
     fn handle_event(&mut self, event: geng::Event) {
@@ -218,8 +243,8 @@ impl geng::State for State {
                 .as_r32();
 
             // Clamp by reach
-            let position =
-                self.player.pos + (position - self.player.pos).clamp_len(..=self.player.reach);
+            let position = self.player.position
+                + (position - self.player.position).clamp_len(..=self.player.reach);
             self.cursor.pos = position;
 
             self.cursor.history.push_back(CursorEntry {
@@ -248,11 +273,11 @@ impl geng::State for State {
             self.geng.draw2d().draw2d(
                 framebuffer,
                 camera,
-                &draw2d::Ellipse::circle(self.player.pos.as_f32(), 0.5, Color::WHITE),
+                &draw2d::Ellipse::circle(self.player.position.as_f32(), 0.5, Color::WHITE),
             );
 
-            let offset = self.cursor.pos - self.player.pos;
-            let sword_pos = self.player.pos + offset.clamp_len(..=self.player.reach);
+            let offset = self.cursor.pos - self.player.position;
+            let sword_pos = self.player.position + offset.clamp_len(..=self.player.reach);
             let sword_pos = geng_utils::pixel::pixel_perfect_aabb(
                 sword_pos.as_f32(),
                 vec2(0.5, 0.5),

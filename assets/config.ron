@@ -3,9 +3,17 @@ Config(
         trail_time: 0.4,
         fade_time: 0.2,
     ),
+    player: Player(
+        walk_speed: 3.0,
+        acceleration: 10.0,
+    ),
     controls: Controls(
         attack: [Mouse(Left)],
         defend: [Mouse(Right)],
+        up: [Key(W), Key(ArrowUp)],
+        down: [Key(S), Key(ArrowDown)],
+        left: [Key(A), Key(ArrowLeft)],
+        right: [Key(D), Key(ArrowRight)],
     ),
     palette: Palette(
         idle: "#fff",

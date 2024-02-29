@@ -12,6 +12,7 @@ pub struct Config {
     pub cursor: CursorConfig,
     pub controls: Controls,
     pub palette: Palette,
+    pub player: PlayerConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,9 +23,20 @@ pub struct CursorConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "Player")]
+pub struct PlayerConfig {
+    pub walk_speed: Coord,
+    pub acceleration: Coord,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Controls {
     pub attack: Vec<EventKey>,
     pub defend: Vec<EventKey>,
+    pub up: Vec<EventKey>,
+    pub down: Vec<EventKey>,
+    pub left: Vec<EventKey>,
+    pub right: Vec<EventKey>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
