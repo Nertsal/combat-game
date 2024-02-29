@@ -26,10 +26,18 @@ pub struct State {
     pub cursor_pos: vec2<Coord>,
     pub cursor_history: VecDeque<CursorEntry>,
     pub cursor_state: CursorState,
+
+    pub player: Player,
+}
+
+#[derive(Debug, Clone)]
+pub struct Player {
+    pub pos: vec2<Coord>,
+    pub reach: Coord,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CursorEntry {
+pub struct CursorEntry {
     /// World position of the cursor.
     pub pos: vec2<Coord>,
     /// Time at which the position was registered.
@@ -38,7 +46,7 @@ struct CursorEntry {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CursorState {
+pub enum CursorState {
     Idle,
     Attack,
     Defend,
@@ -67,6 +75,11 @@ impl State {
             cursor_pos: vec2::ZERO,
             cursor_history: VecDeque::new(),
             cursor_state: CursorState::Idle,
+
+            player: Player {
+                pos: vec2::ZERO,
+                reach: r32(2.0),
+            },
         }
     }
 }
@@ -126,10 +139,16 @@ impl geng::State for State {
             let position = (position - self.texture_target.bottom_left())
                 / self.framebuffer_size.as_f32()
                 * self.texture.size().as_f32();
-            self.cursor_pos = self
+            let position = self
                 .camera
                 .screen_to_world(self.texture.size().as_f32(), position)
                 .as_r32();
+
+            // Clamp by reach
+            let position =
+                self.player.pos + (position - self.player.pos).clamp_len(..=self.player.reach);
+            self.cursor_pos = position;
+
             self.cursor_history.push_back(CursorEntry {
                 pos: self.cursor_pos,
                 time: self.real_time,
@@ -152,6 +171,38 @@ impl geng::State for State {
             ugli::clear(framebuffer, Some(Color::BLACK), None, None);
 
             let camera = &self.camera;
+
+            self.geng.draw2d().draw2d(
+                framebuffer,
+                camera,
+                &draw2d::Ellipse::circle(self.player.pos.as_f32(), 0.5, Color::WHITE),
+            );
+
+            let offset = self.cursor_pos - self.player.pos;
+            let sword_pos = self.player.pos + offset.clamp_len(..=self.player.reach);
+            let sword_pos = geng_utils::pixel::pixel_perfect_aabb(
+                sword_pos.as_f32(),
+                vec2(0.5, 0.5),
+                self.assets.sword.size(),
+                camera,
+                framebuffer.size().as_f32(),
+            );
+
+            let mut angle = offset.as_f32().arg();
+            if let CursorState::Defend = self.cursor_state {
+                angle += Angle::from_degrees(50.0);
+            }
+
+            self.geng.draw2d().draw2d(
+                framebuffer,
+                camera,
+                &draw2d::TexturedQuad::new(
+                    Aabb2::ZERO.extend_symmetric(sword_pos.size() / 2.0),
+                    &*self.assets.sword,
+                )
+                .rotate(angle)
+                .translate(sword_pos.center()),
+            );
 
             let vertices = self
                 .cursor_history
