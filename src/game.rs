@@ -14,18 +14,35 @@ pub struct State {
     pub camera: Camera2d,
     pub real_time: Time,
 
-    /// World position of the cursor.
-    pub cursor_pos: vec2<Coord>,
-    pub cursor_history: VecDeque<CursorEntry>,
-    pub cursor_state: CursorState,
-
+    pub cursor: Cursor,
     pub player: Player,
+
+    pub floating_texts: Vec<FloatingText>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Cursor {
+    /// World position of the cursor.
+    pub pos: vec2<Coord>,
+    pub history: VecDeque<CursorEntry>,
+    pub state: CursorState,
+    /// State on the previous frame.
+    pub last_state: CursorState,
 }
 
 #[derive(Debug, Clone)]
 pub struct Player {
     pub pos: vec2<Coord>,
     pub reach: Coord,
+}
+
+#[derive(Debug, Clone)]
+pub struct FloatingText {
+    pub text: String,
+    pub pos: vec2<Coord>,
+    pub lifetime: Bounded<Time>,
+    pub initial_scale: Coord,
+    pub rotation: Angle<Coord>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -66,15 +83,64 @@ impl State {
             },
             real_time: Time::ZERO,
 
-            cursor_pos: vec2::ZERO,
-            cursor_history: VecDeque::new(),
-            cursor_state: CursorState::Idle,
-
+            cursor: Cursor {
+                pos: vec2::ZERO,
+                history: VecDeque::new(),
+                state: CursorState::Idle,
+                last_state: CursorState::Idle,
+            },
             player: Player {
                 pos: vec2::ZERO,
                 reach: r32(2.0),
             },
+
+            floating_texts: Vec::new(),
         }
+    }
+
+    fn check_action(&mut self) {
+        let Some(end) = self
+            .cursor
+            .history
+            .iter()
+            .rev()
+            .position(|entry| entry.state == self.cursor.last_state)
+        else {
+            return;
+        };
+
+        let Some(len) = self
+            .cursor
+            .history
+            .iter()
+            .rev()
+            .skip(end)
+            .position(|entry| entry.state != self.cursor.last_state)
+        else {
+            return;
+        };
+
+        let start = self.cursor.history[self.cursor.history.len() - end - len];
+        let end = self.cursor.history[self.cursor.history.len() - 1 - end];
+
+        let pos = (start.pos + end.pos) / r32(2.0);
+
+        let text = match end.state {
+            CursorState::Idle => return,
+            CursorState::Attack => "Slash".to_owned(),
+            CursorState::Defend => "Parry".to_owned(),
+        };
+
+        log::debug!("{} at {}", text, pos);
+
+        let degrees = r32(thread_rng().gen_range(-15.0..=15.0));
+        self.floating_texts.push(FloatingText {
+            text,
+            pos,
+            lifetime: Bounded::new_max(r32(0.5)),
+            initial_scale: r32(1.0),
+            rotation: Angle::from_degrees(degrees),
+        });
     }
 }
 
@@ -83,50 +149,61 @@ impl geng::State for State {
         let delta_time = r32(delta_time as f32);
         self.real_time += delta_time;
 
+        for text in &mut self.floating_texts {
+            text.lifetime.change(-delta_time);
+        }
+        self.floating_texts
+            .retain(|text| text.lifetime.is_above_min());
+
         {
             // Validate cursor state (in case some event is missed, e.g. when window loses focus)
             let attack =
                 geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.attack);
             let defend =
                 geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.defend);
-            match self.cursor_state {
+            match self.cursor.state {
                 CursorState::Idle => {
                     if attack {
-                        self.cursor_state = CursorState::Attack;
+                        self.cursor.state = CursorState::Attack;
                     } else if defend {
-                        self.cursor_state = CursorState::Defend;
+                        self.cursor.state = CursorState::Defend;
                     }
                 }
                 CursorState::Attack => {
                     if !attack {
-                        self.cursor_state = CursorState::Idle;
+                        self.cursor.state = CursorState::Idle;
                     }
                 }
                 CursorState::Defend => {
                     if !defend {
-                        self.cursor_state = CursorState::Idle;
+                        self.cursor.state = CursorState::Idle;
                     }
                 }
             }
         }
+        if self.cursor.state != self.cursor.last_state {
+            self.check_action();
+            self.cursor.last_state = self.cursor.state;
+        }
 
-        self.cursor_history
+        self.cursor
+            .history
             .retain(|entry| self.real_time - entry.time < self.config.cursor.trail_time);
     }
 
     fn handle_event(&mut self, event: geng::Event) {
         // Cursor state
         if geng_utils::key::is_event_press(&event, &self.config.controls.attack) {
-            self.cursor_state = CursorState::Attack;
+            self.cursor.state = CursorState::Attack;
         } else if geng_utils::key::is_event_release(&event, &self.config.controls.attack) {
-            if let CursorState::Attack = self.cursor_state {
-                self.cursor_state = CursorState::Idle;
+            if let CursorState::Attack = self.cursor.state {
+                self.cursor.state = CursorState::Idle;
             }
         } else if geng_utils::key::is_event_press(&event, &self.config.controls.defend) {
-            self.cursor_state = CursorState::Defend;
+            self.cursor.state = CursorState::Defend;
         } else if geng_utils::key::is_event_release(&event, &self.config.controls.defend) {
-            if let CursorState::Defend = self.cursor_state {
-                self.cursor_state = CursorState::Idle;
+            if let CursorState::Defend = self.cursor.state {
+                self.cursor.state = CursorState::Idle;
             }
         }
 
@@ -143,12 +220,12 @@ impl geng::State for State {
             // Clamp by reach
             let position =
                 self.player.pos + (position - self.player.pos).clamp_len(..=self.player.reach);
-            self.cursor_pos = position;
+            self.cursor.pos = position;
 
-            self.cursor_history.push_back(CursorEntry {
-                pos: self.cursor_pos,
+            self.cursor.history.push_back(CursorEntry {
+                pos: self.cursor.pos,
                 time: self.real_time,
-                state: self.cursor_state,
+                state: self.cursor.state,
             });
         }
     }
@@ -174,7 +251,7 @@ impl geng::State for State {
                 &draw2d::Ellipse::circle(self.player.pos.as_f32(), 0.5, Color::WHITE),
             );
 
-            let offset = self.cursor_pos - self.player.pos;
+            let offset = self.cursor.pos - self.player.pos;
             let sword_pos = self.player.pos + offset.clamp_len(..=self.player.reach);
             let sword_pos = geng_utils::pixel::pixel_perfect_aabb(
                 sword_pos.as_f32(),
@@ -185,7 +262,7 @@ impl geng::State for State {
             );
 
             let mut angle = offset.as_f32().arg();
-            if let CursorState::Defend = self.cursor_state {
+            if let CursorState::Defend = self.cursor.state {
                 angle += Angle::from_degrees(50.0);
             }
 
@@ -201,7 +278,8 @@ impl geng::State for State {
             );
 
             let vertices = self
-                .cursor_history
+                .cursor
+                .history
                 .iter()
                 .map(|entry| {
                     let t = (self.real_time - entry.time - self.config.cursor.fade_time)
@@ -227,6 +305,26 @@ impl geng::State for State {
                 camera,
                 &draw2d::Chain::new_gradient(vertices, 0.1, 0),
             );
+
+            for text in &self.floating_texts {
+                let t = text.lifetime.get_ratio().as_f32();
+                let t = crate::util::smoothstep(t);
+                let scale = text.initial_scale.as_f32() * t;
+
+                let transform = mat3::translate(text.pos.as_f32())
+                    * mat3::rotate(text.rotation.map(R32::as_f32))
+                    * mat3::scale_uniform(scale);
+                let color = Color::lerp(Color::WHITE, Color::TRANSPARENT_WHITE, t);
+
+                self.geng.default_font().draw(
+                    framebuffer,
+                    camera,
+                    &text.text,
+                    vec2::splat(geng::TextAlign(0.5)),
+                    transform,
+                    color,
+                );
+            }
         }
 
         let mut draw = geng_utils::texture::DrawTexture::new(&self.texture);
