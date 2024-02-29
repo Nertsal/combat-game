@@ -25,6 +25,7 @@ dependencies = [
  "clap",
  "geng",
  "geng-utils",
+ "serde",
 ]
 
 [[package]]

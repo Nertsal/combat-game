@@ -2,19 +2,11 @@ use crate::prelude::*;
 
 use std::collections::VecDeque;
 
-const CURSOR_TRAIL_TIME: f32 = 0.4;
-const CURSOR_FADE_TIME: f32 = 0.2;
-
-const KEYS_ATTACK: [MouseButton; 1] = [MouseButton::Left];
-const KEYS_DEFEND: [MouseButton; 1] = [MouseButton::Right];
-
-const COLOR_IDLE: Color = Color::WHITE;
-const COLOR_ATTACK: Color = Color::RED;
-const COLOR_DEFEND: Color = Color::BLUE;
-
 pub struct State {
     pub geng: Geng,
     pub assets: Rc<Assets>,
+    pub config: Config,
+
     pub framebuffer_size: vec2<usize>,
     pub texture: ugli::Texture,
     pub texture_target: Aabb2<f32>,
@@ -53,10 +45,12 @@ pub enum CursorState {
 }
 
 impl State {
-    pub fn new(geng: &Geng, assets: &Rc<Assets>) -> Self {
+    pub fn new(geng: &Geng, assets: &Rc<Assets>, config: Config) -> Self {
         Self {
             geng: geng.clone(),
             assets: assets.clone(),
+            config,
+
             framebuffer_size: vec2(1, 1),
             texture: {
                 let mut texture = geng_utils::texture::new_texture(geng.ugli(), vec2(640, 360));
@@ -91,8 +85,10 @@ impl geng::State for State {
 
         {
             // Validate cursor state (in case some event is missed, e.g. when window loses focus)
-            let attack = geng_utils::key::is_key_pressed(self.geng.window(), KEYS_ATTACK);
-            let defend = geng_utils::key::is_key_pressed(self.geng.window(), KEYS_DEFEND);
+            let attack =
+                geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.attack);
+            let defend =
+                geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.defend);
             match self.cursor_state {
                 CursorState::Idle => {
                     if attack {
@@ -115,20 +111,20 @@ impl geng::State for State {
         }
 
         self.cursor_history
-            .retain(|entry| self.real_time - entry.time < r32(CURSOR_TRAIL_TIME));
+            .retain(|entry| self.real_time - entry.time < self.config.cursor.trail_time);
     }
 
     fn handle_event(&mut self, event: geng::Event) {
         // Cursor state
-        if geng_utils::key::is_event_press(&event, KEYS_ATTACK) {
+        if geng_utils::key::is_event_press(&event, &self.config.controls.attack) {
             self.cursor_state = CursorState::Attack;
-        } else if geng_utils::key::is_event_release(&event, KEYS_ATTACK) {
+        } else if geng_utils::key::is_event_release(&event, &self.config.controls.attack) {
             if let CursorState::Attack = self.cursor_state {
                 self.cursor_state = CursorState::Idle;
             }
-        } else if geng_utils::key::is_event_press(&event, KEYS_DEFEND) {
+        } else if geng_utils::key::is_event_press(&event, &self.config.controls.defend) {
             self.cursor_state = CursorState::Defend;
-        } else if geng_utils::key::is_event_release(&event, KEYS_DEFEND) {
+        } else if geng_utils::key::is_event_release(&event, &self.config.controls.defend) {
             if let CursorState::Defend = self.cursor_state {
                 self.cursor_state = CursorState::Idle;
             }
@@ -208,14 +204,15 @@ impl geng::State for State {
                 .cursor_history
                 .iter()
                 .map(|entry| {
-                    let t = (self.real_time - entry.time - r32(CURSOR_FADE_TIME)).max(Time::ZERO)
-                        / r32(CURSOR_TRAIL_TIME - CURSOR_FADE_TIME);
+                    let t = (self.real_time - entry.time - self.config.cursor.fade_time)
+                        .max(Time::ZERO)
+                        / (self.config.cursor.trail_time - self.config.cursor.fade_time);
                     let t = crate::util::smoothstep(t).as_f32();
 
                     let color_a = match entry.state {
-                        CursorState::Idle => COLOR_IDLE,
-                        CursorState::Attack => COLOR_ATTACK,
-                        CursorState::Defend => COLOR_DEFEND,
+                        CursorState::Idle => self.config.palette.idle,
+                        CursorState::Attack => self.config.palette.attack,
+                        CursorState::Defend => self.config.palette.defend,
                     };
                     let color_b = Color { a: 0.0, ..color_a };
 

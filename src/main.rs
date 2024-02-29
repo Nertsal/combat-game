@@ -32,7 +32,12 @@ fn main() {
             .unwrap();
         let assets = Rc::new(assets);
 
-        let state = game::State::new(&geng, &assets);
+        let config =
+            <Config as geng::asset::Load>::load(manager, &assets_path.join("config.ron"), &())
+                .await
+                .unwrap();
+
+        let state = game::State::new(&geng, &assets, config);
         geng.run_state(state).await;
     });
 }

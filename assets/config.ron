@@ -1,0 +1,15 @@
+Config(
+    cursor: Cursor(
+        trail_time: 0.4,
+        fade_time: 0.2,
+    ),
+    controls: Controls(
+        attack: [Mouse(Left)],
+        defend: [Mouse(Right)],
+    ),
+    palette: Palette(
+        idle: "#fff",
+        attack: "#f00",
+        defend: "#00f",
+    ),
+)

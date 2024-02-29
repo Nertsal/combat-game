@@ -1,5 +1,5 @@
 pub use geng::{prelude::*, Key, MouseButton};
-pub use geng_utils::{bounded::Bounded, conversions::*};
+pub use geng_utils::{bounded::Bounded, conversions::*, key::EventKey};
 
 pub use crate::assets::*;
 
