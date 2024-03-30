@@ -1,5 +1,5 @@
 [package]
-name = "acerola-jam-0"
+name = "combat-game"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.1", features = ["derive"] }
-geng = "0.17.0"
+geng = "0.17.2"
 geng-utils = "0.3.0"
 serde = { version = "1.0.197", features = ["derive"] }
 
