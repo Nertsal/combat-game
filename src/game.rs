@@ -123,33 +123,45 @@ impl State {
             return;
         };
 
-        let Some(len) = self
+        let start = self
             .cursor
             .history
             .iter()
             .rev()
             .skip(end)
             .position(|entry| entry.state != self.cursor.last_state)
-        else {
-            return;
-        };
+            .map(|len| self.cursor.history.len() - end - len)
+            .unwrap_or(0);
+        let end = self.cursor.history.len() - 1 - end;
 
-        let start = self.cursor.history[self.cursor.history.len() - end - len];
-        let end = self.cursor.history[self.cursor.history.len() - 1 - end];
+        let start = self.cursor.history[start];
+        let end = self.cursor.history[end];
 
         let pos = (start.pos + end.pos) / r32(2.0);
 
+        let time = (end.time - start.time) / self.config.cursor.trail_time;
+
+        let power_t = time; // Maybe sqrt
+        let power = power_t * (self.config.weapon.power_max - self.config.weapon.power_min)
+            + self.config.weapon.power_min;
+
         let text = match end.state {
             CursorState::Idle => return,
-            CursorState::Attack => "Slash".to_owned(),
-            CursorState::Defend => "Parry".to_owned(),
+            CursorState::Attack => "Slash",
+            CursorState::Defend => "Parry",
         };
 
-        log::debug!("{} at {}", text, pos);
+        log::debug!(
+            "{} at ({:.02}, {:.02}), power: {:.02}",
+            text,
+            pos.x,
+            pos.y,
+            power
+        );
 
         let degrees = r32(thread_rng().gen_range(-15.0..=15.0));
         self.floating_texts.push(FloatingText {
-            text,
+            text: format!("{} {}", text, power.ceil()),
             pos,
             lifetime: Bounded::new_max(r32(0.5)),
             initial_scale: r32(1.0),

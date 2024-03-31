@@ -13,6 +13,7 @@ pub struct Config {
     pub controls: Controls,
     pub palette: Palette,
     pub player: PlayerConfig,
+    pub weapon: WeaponConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,6 +21,13 @@ pub struct Config {
 pub struct CursorConfig {
     pub trail_time: Time,
     pub fade_time: Time,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "Weapon")]
+pub struct WeaponConfig {
+    pub power_min: R32,
+    pub power_max: R32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
