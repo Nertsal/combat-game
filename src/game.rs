@@ -35,7 +35,14 @@ pub struct Player {
     pub position: vec2<Coord>,
     pub velocity: vec2<Coord>,
     pub target_move_dir: vec2<Coord>,
+    pub weapon: WeaponControl,
+}
+
+#[derive(Debug, Clone)]
+pub struct WeaponControl {
     pub reach: Coord,
+    /// Relative position of the weapon tip.
+    pub position: vec2<Coord>,
 }
 
 #[derive(Debug, Clone)]
@@ -95,7 +102,10 @@ impl State {
                 position: vec2::ZERO,
                 velocity: vec2::ZERO,
                 target_move_dir: vec2::ZERO,
-                reach: r32(2.0),
+                weapon: WeaponControl {
+                    reach: r32(2.0),
+                    position: vec2::ZERO,
+                },
             },
 
             floating_texts: Vec::new(),
@@ -214,6 +224,10 @@ impl geng::State for State {
             .clamp_len(..=self.config.player.acceleration * delta_time);
 
         self.player.position += self.player.velocity * delta_time;
+
+        let weapon_target =
+            (self.cursor.pos - self.player.position).clamp_len(..=self.player.weapon.reach);
+        self.player.weapon.position = weapon_target;
     }
 
     fn handle_event(&mut self, event: geng::Event) {
@@ -244,7 +258,7 @@ impl geng::State for State {
 
             // Clamp by reach
             let position = self.player.position
-                + (position - self.player.position).clamp_len(..=self.player.reach);
+                + (position - self.player.position).clamp_len(..=self.player.weapon.reach);
             self.cursor.pos = position;
 
             self.cursor.history.push_back(CursorEntry {
@@ -276,8 +290,8 @@ impl geng::State for State {
                 &draw2d::Ellipse::circle(self.player.position.as_f32(), 0.5, Color::WHITE),
             );
 
-            let offset = self.cursor.pos - self.player.position;
-            let sword_pos = self.player.position + offset.clamp_len(..=self.player.reach);
+            let offset = self.player.weapon.position;
+            let sword_pos = self.player.position + offset;
             let sword_pos = geng_utils::pixel::pixel_perfect_aabb(
                 sword_pos.as_f32(),
                 vec2(0.5, 0.5),
