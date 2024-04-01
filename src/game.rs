@@ -49,11 +49,29 @@ pub struct WeaponControl {
     pub position: vec2<Coord>,
     /// Relative velocity of the weapon tip.
     pub velocity: vec2<Coord>,
-    pub action: Option<WeaponAction>,
+    pub action: WeaponAction,
 }
 
 #[derive(Debug, Clone)]
-pub struct WeaponAction {
+pub enum WeaponAction {
+    Idle {
+        target: vec2<Coord>,
+    },
+    Charging {
+        target: vec2<Coord>,
+        intent: WeaponIntent,
+    },
+    Swing(WeaponSwing),
+}
+
+impl WeaponAction {
+    pub fn swinging(&self) -> bool {
+        matches!(self, Self::Swing(_))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WeaponSwing {
     pub intent: WeaponIntent,
     pub power: R32,
     pub arc: Parabola<Coord>,
@@ -129,7 +147,7 @@ impl State {
                     reach: r32(2.0),
                     position: vec2::ZERO,
                     velocity: vec2::ZERO,
-                    action: None,
+                    action: WeaponAction::Idle { target: vec2::ZERO },
                 },
             },
 
@@ -190,7 +208,7 @@ impl State {
 
         let weapon = &mut self.player.weapon;
         let arc = Parabola::new([start.relative_pos, mid.relative_pos, end.relative_pos]);
-        weapon.action = Some(WeaponAction { intent, power, arc });
+        weapon.action = WeaponAction::Swing(WeaponSwing { intent, power, arc });
         // Boost
         let t = arc.project(weapon.position);
         let projection = arc.get(t);
@@ -258,6 +276,37 @@ impl geng::State for State {
             .history
             .retain(|entry| self.real_time - entry.time < self.config.cursor.trail_time);
 
+        // Update weapon action
+        if !self.player.weapon.action.swinging() {
+            let start = self
+                .player
+                .cursor
+                .history
+                .iter()
+                .rev()
+                .position(|entry| entry.state != self.player.cursor.last_state)
+                .map(|len| self.player.cursor.history.len() - len)
+                .unwrap_or(0);
+            let target = if let Some(start) = self.player.cursor.history.get(start) {
+                start.relative_pos
+            } else {
+                self.player.weapon.position
+            };
+            self.player.weapon.action = match self.player.cursor.state {
+                CursorState::Idle => WeaponAction::Idle {
+                    target: self.player.cursor.pos,
+                },
+                CursorState::Attack => WeaponAction::Charging {
+                    target,
+                    intent: WeaponIntent::Attack,
+                },
+                CursorState::Defend => WeaponAction::Charging {
+                    target,
+                    intent: WeaponIntent::Defend,
+                },
+            };
+        }
+
         let mut move_dir = vec2::<f32>::ZERO;
         if geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.up) {
             move_dir.y += 1.0;
@@ -280,50 +329,44 @@ impl geng::State for State {
         self.player.position += self.player.velocity * delta_time;
 
         let weapon = &mut self.player.weapon;
-        if let Some(action) = &weapon.action {
-            let t = action.arc.project(weapon.position);
-            if t > R32::ONE {
-                // Motion finished - boost backwards
-                let boost = (self.player.cursor.pos - weapon.position) * r32(5.0) * action.power;
-                weapon.velocity = (weapon.velocity + boost).clamp_len(..=weapon.speed_max);
-                weapon.action = None;
-            } else {
-                let projection = action.arc.get(t);
-                let tangent = action.arc.tangent(t);
-                let normal = projection - weapon.position;
+        match &weapon.action {
+            WeaponAction::Swing(swing) => {
+                let t = swing.arc.project(weapon.position);
+                if t > R32::ONE {
+                    // Motion finished - boost backwards
+                    let boost = (self.player.cursor.pos - weapon.position) * r32(5.0) * swing.power;
+                    weapon.velocity = (weapon.velocity + boost).clamp_len(..=weapon.speed_max);
+                    weapon.action = WeaponAction::Idle {
+                        target: self.player.cursor.pos,
+                    };
+                } else {
+                    let projection = swing.arc.get(t);
+                    let tangent = swing.arc.tangent(t);
+                    let normal = projection - weapon.position;
 
-                let target_vel = (normal * r32(5.0)
-                    + (tangent.normalize_or_zero() * r32(5.0) * action.power))
-                    * r32(3.0);
-                let target_vel = target_vel.clamp_len(..=r32(1.5) * weapon.speed_max);
+                    let target_vel = (normal * r32(5.0)
+                        + (tangent.normalize_or_zero() * r32(5.0) * swing.power))
+                        * r32(3.0);
+                    let target_vel = target_vel.clamp_len(..=r32(1.5) * weapon.speed_max);
 
+                    weapon.velocity += (target_vel - weapon.velocity)
+                        .clamp_len(..=weapon.acceleration * delta_time);
+                }
+            }
+            WeaponAction::Idle { target } => {
+                let target = target.clamp_len(..=weapon.reach);
+                let target_vel =
+                    ((target - weapon.position) * r32(10.0)).clamp_len(..=weapon.speed_max);
                 weapon.velocity +=
                     (target_vel - weapon.velocity).clamp_len(..=weapon.acceleration * delta_time);
             }
-        } else {
-            let target = (if let CursorState::Idle = self.player.cursor.state {
-                self.player.cursor.pos
-            } else {
-                let start = self
-                    .player
-                    .cursor
-                    .history
-                    .iter()
-                    .rev()
-                    .position(|entry| entry.state != self.player.cursor.last_state)
-                    .map(|len| self.player.cursor.history.len() - len)
-                    .unwrap_or(0);
-                if let Some(start) = self.player.cursor.history.get(start) {
-                    start.relative_pos
-                } else {
-                    weapon.position
-                }
-            })
-            .clamp_len(..=weapon.reach);
-            let target_vel =
-                ((target - weapon.position) * r32(10.0)).clamp_len(..=weapon.speed_max);
-            weapon.velocity +=
-                (target_vel - weapon.velocity).clamp_len(..=weapon.acceleration * delta_time);
+            WeaponAction::Charging { target, intent } => {
+                let target = target.clamp_len(..=weapon.reach);
+                let target_vel =
+                    ((target - weapon.position) * r32(10.0)).clamp_len(..=weapon.speed_max);
+                weapon.velocity +=
+                    (target_vel - weapon.velocity).clamp_len(..=weapon.acceleration * delta_time);
+            }
         }
         weapon.position =
             (weapon.position + weapon.velocity * delta_time).clamp_len(..=weapon.reach);
@@ -335,13 +378,13 @@ impl geng::State for State {
             world_pos: self.player.position + weapon.position,
             relative_pos: weapon.position,
             time: self.real_time,
-            state: weapon
-                .action
-                .as_ref()
-                .map_or(CursorState::Idle, |state| match state.intent {
+            state: match &weapon.action {
+                WeaponAction::Swing(WeaponSwing { intent, .. }) => match intent {
                     WeaponIntent::Attack => CursorState::Attack,
                     WeaponIntent::Defend => CursorState::Defend,
-                }),
+                },
+                _ => CursorState::Idle,
+            },
         });
     }
 
@@ -411,18 +454,16 @@ impl geng::State for State {
             );
 
             let mut angle = offset.as_f32().arg();
-            if let Some(WeaponIntent::Defend) = self
-                .player
-                .weapon
-                .action
-                .as_ref()
-                .map(|action| action.intent)
+            if let WeaponAction::Swing(WeaponSwing {
+                intent: WeaponIntent::Defend,
+                ..
+            })
+            | WeaponAction::Charging {
+                intent: WeaponIntent::Defend,
+                ..
+            } = &self.player.weapon.action
             {
                 angle += Angle::from_degrees(50.0);
-            } else if let CursorState::Defend = self.player.cursor.state {
-                if self.player.weapon.action.is_none() {
-                    angle += Angle::from_degrees(50.0);
-                }
             }
 
             self.geng.draw2d().draw2d(
