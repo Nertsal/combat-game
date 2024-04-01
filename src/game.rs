@@ -279,21 +279,23 @@ impl geng::State for State {
         let weapon = &mut self.player.weapon;
         if let Some(action) = &weapon.action {
             let t = action.arc.project(weapon.position);
-            let projection = action.arc.get(t);
-            let tangent = action.arc.tangent(t);
-            let normal = projection - weapon.position;
-
-            let target_vel = (normal * r32(5.0)
-                + (tangent.normalize_or_zero() * r32(5.0) * action.power))
-                * r32(3.0);
-            let target_vel = target_vel.clamp_len(..=r32(1.5) * weapon.speed_max);
-
-            weapon.velocity +=
-                (target_vel - weapon.velocity).clamp_len(..=weapon.acceleration * delta_time);
-
             if t > R32::ONE {
-                // Motion finished
+                // Motion finished - boost backwards
+                let boost = -weapon.position * r32(5.0) * action.power;
+                weapon.velocity = (weapon.velocity + boost).clamp_len(..=weapon.speed_max);
                 weapon.action = None;
+            } else {
+                let projection = action.arc.get(t);
+                let tangent = action.arc.tangent(t);
+                let normal = projection - weapon.position;
+
+                let target_vel = (normal * r32(5.0)
+                    + (tangent.normalize_or_zero() * r32(5.0) * action.power))
+                    * r32(3.0);
+                let target_vel = target_vel.clamp_len(..=r32(1.5) * weapon.speed_max);
+
+                weapon.velocity +=
+                    (target_vel - weapon.velocity).clamp_len(..=weapon.acceleration * delta_time);
             }
         } else {
             let target = (if let CursorState::Idle = self.cursor.state {
