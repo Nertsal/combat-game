@@ -14,7 +14,6 @@ pub struct State {
     pub camera: Camera2d,
     pub real_time: Time,
 
-    pub cursor: Cursor,
     pub player: Player,
 
     pub floating_texts: Vec<FloatingText>,
@@ -32,6 +31,8 @@ pub struct Cursor {
 
 #[derive(Debug, Clone)]
 pub struct Player {
+    /// Cursor relative to the player position.
+    pub cursor: Cursor,
     pub position: vec2<Coord>,
     pub velocity: vec2<Coord>,
     pub target_move_dir: vec2<Coord>,
@@ -76,7 +77,9 @@ pub struct FloatingText {
 #[derive(Debug, Clone, Copy)]
 pub struct CursorEntry {
     /// World position of the cursor.
-    pub pos: vec2<Coord>,
+    pub world_pos: vec2<Coord>,
+    /// Position relative to the player.
+    pub relative_pos: vec2<Coord>,
     /// Time at which the position was registered.
     pub time: Time,
     pub state: CursorState,
@@ -109,13 +112,13 @@ impl State {
             },
             real_time: Time::ZERO,
 
-            cursor: Cursor {
-                pos: vec2::ZERO,
-                history: VecDeque::new(),
-                state: CursorState::Idle,
-                last_state: CursorState::Idle,
-            },
             player: Player {
+                cursor: Cursor {
+                    pos: vec2::ZERO,
+                    history: VecDeque::new(),
+                    state: CursorState::Idle,
+                    last_state: CursorState::Idle,
+                },
                 position: vec2::ZERO,
                 velocity: vec2::ZERO,
                 target_move_dir: vec2::ZERO,
@@ -139,32 +142,31 @@ impl State {
     }
 
     fn check_action(&mut self) {
-        let Some(end) = self
-            .cursor
+        let cursor = &mut self.player.cursor;
+        let Some(end) = cursor
             .history
             .iter()
             .rev()
-            .position(|entry| entry.state == self.cursor.last_state)
+            .position(|entry| entry.state == cursor.last_state)
         else {
             return;
         };
 
-        let start = self
-            .cursor
+        let start = cursor
             .history
             .iter()
             .rev()
             .skip(end)
-            .position(|entry| entry.state != self.cursor.last_state)
-            .map(|len| self.cursor.history.len() - end - len)
+            .position(|entry| entry.state != cursor.last_state)
+            .map(|len| cursor.history.len() - end - len)
             .unwrap_or(0);
-        let end = self.cursor.history.len() - 1 - end;
+        let end = cursor.history.len() - 1 - end;
 
-        let mid = self.cursor.history[(start + end) / 2];
-        let start = self.cursor.history[start];
-        let end = self.cursor.history[end];
+        let mid = cursor.history[(start + end) / 2];
+        let start = cursor.history[start];
+        let end = cursor.history[end];
 
-        let pos = (start.pos + end.pos) / r32(2.0);
+        let pos = self.player.position + (start.relative_pos + end.relative_pos) / r32(2.0);
 
         let time = (end.time - start.time) / self.config.cursor.trail_time;
 
@@ -187,7 +189,7 @@ impl State {
         );
 
         let weapon = &mut self.player.weapon;
-        let arc = Parabola::new([start.pos, mid.pos, end.pos]);
+        let arc = Parabola::new([start.relative_pos, mid.relative_pos, end.relative_pos]);
         weapon.action = Some(WeaponAction { intent, power, arc });
         // Boost
         let t = arc.project(weapon.position);
@@ -226,32 +228,33 @@ impl geng::State for State {
                 geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.attack);
             let defend =
                 geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.defend);
-            match self.cursor.state {
+            match self.player.cursor.state {
                 CursorState::Idle => {
                     if attack {
-                        self.cursor.state = CursorState::Attack;
+                        self.player.cursor.state = CursorState::Attack;
                     } else if defend {
-                        self.cursor.state = CursorState::Defend;
+                        self.player.cursor.state = CursorState::Defend;
                     }
                 }
                 CursorState::Attack => {
                     if !attack {
-                        self.cursor.state = CursorState::Idle;
+                        self.player.cursor.state = CursorState::Idle;
                     }
                 }
                 CursorState::Defend => {
                     if !defend {
-                        self.cursor.state = CursorState::Idle;
+                        self.player.cursor.state = CursorState::Idle;
                     }
                 }
             }
         }
-        if self.cursor.state != self.cursor.last_state {
+        if self.player.cursor.state != self.player.cursor.last_state {
             self.check_action();
-            self.cursor.last_state = self.cursor.state;
+            self.player.cursor.last_state = self.player.cursor.state;
         }
 
-        self.cursor
+        self.player
+            .cursor
             .history
             .retain(|entry| self.real_time - entry.time < self.config.cursor.trail_time);
 
@@ -298,19 +301,20 @@ impl geng::State for State {
                     (target_vel - weapon.velocity).clamp_len(..=weapon.acceleration * delta_time);
             }
         } else {
-            let target = (if let CursorState::Idle = self.cursor.state {
-                self.cursor.pos - self.player.position
+            let target = (if let CursorState::Idle = self.player.cursor.state {
+                self.player.cursor.pos
             } else {
                 let start = self
+                    .player
                     .cursor
                     .history
                     .iter()
                     .rev()
-                    .position(|entry| entry.state != self.cursor.last_state)
-                    .map(|len| self.cursor.history.len() - len)
+                    .position(|entry| entry.state != self.player.cursor.last_state)
+                    .map(|len| self.player.cursor.history.len() - len)
                     .unwrap_or(0);
-                if let Some(start) = self.cursor.history.get(start) {
-                    start.pos
+                if let Some(start) = self.player.cursor.history.get(start) {
+                    start.relative_pos
                 } else {
                     weapon.position
                 }
@@ -328,7 +332,8 @@ impl geng::State for State {
             .history
             .retain(|entry| self.real_time - entry.time < self.config.cursor.trail_time);
         weapon.history.push_back(CursorEntry {
-            pos: self.player.position + weapon.position,
+            world_pos: self.player.position + weapon.position,
+            relative_pos: weapon.position,
             time: self.real_time,
             state: weapon
                 .action
@@ -343,42 +348,33 @@ impl geng::State for State {
     fn handle_event(&mut self, event: geng::Event) {
         // Cursor state
         if geng_utils::key::is_event_press(&event, &self.config.controls.attack) {
-            self.cursor.state = CursorState::Attack;
+            self.player.cursor.state = CursorState::Attack;
         } else if geng_utils::key::is_event_release(&event, &self.config.controls.attack) {
-            if let CursorState::Attack = self.cursor.state {
-                self.cursor.state = CursorState::Idle;
+            if let CursorState::Attack = self.player.cursor.state {
+                self.player.cursor.state = CursorState::Idle;
             }
         } else if geng_utils::key::is_event_press(&event, &self.config.controls.defend) {
-            self.cursor.state = CursorState::Defend;
+            self.player.cursor.state = CursorState::Defend;
         } else if geng_utils::key::is_event_release(&event, &self.config.controls.defend) {
-            if let CursorState::Defend = self.cursor.state {
-                self.cursor.state = CursorState::Idle;
+            if let CursorState::Defend = self.player.cursor.state {
+                self.player.cursor.state = CursorState::Idle;
             }
         }
 
         if let geng::Event::RawMouseMove { delta } = event {
             let delta = delta.as_r32();
             let world_delta = delta * r32(self.camera.fov / self.framebuffer_size.y as f32);
-            let position = self.cursor.pos + world_delta * self.config.cursor.sensitivity;
-
-            // let position = position.as_f32();
-            // let position = (position - self.texture_target.bottom_left())
-            //     / self.framebuffer_size.as_f32()
-            //     * self.texture.size().as_f32();
-            // let position = self
-            //     .camera
-            //     .screen_to_world(self.texture.size().as_f32(), position)
-            //     .as_r32();
+            let position = self.player.cursor.pos + world_delta * self.config.cursor.sensitivity;
 
             // Clamp by reach
-            let position = self.player.position
-                + (position - self.player.position).clamp_len(..=self.player.weapon.reach);
-            self.cursor.pos = position;
+            let position = position.clamp_len(..=self.player.weapon.reach);
+            self.player.cursor.pos = position;
 
-            self.cursor.history.push_back(CursorEntry {
-                pos: self.cursor.pos,
+            self.player.cursor.history.push_back(CursorEntry {
+                world_pos: self.player.position + self.player.cursor.pos,
+                relative_pos: self.player.cursor.pos,
                 time: self.real_time,
-                state: self.cursor.state,
+                state: self.player.cursor.state,
             });
         }
     }
@@ -423,7 +419,7 @@ impl geng::State for State {
                 .map(|action| action.intent)
             {
                 angle += Angle::from_degrees(50.0);
-            } else if let CursorState::Defend = self.cursor.state {
+            } else if let CursorState::Defend = self.player.cursor.state {
                 if self.player.weapon.action.is_none() {
                     angle += Angle::from_degrees(50.0);
                 }
@@ -442,6 +438,7 @@ impl geng::State for State {
 
             // Cursor trail
             let vertices = self
+                .player
                 .cursor
                 .history
                 .iter()
@@ -460,7 +457,7 @@ impl geng::State for State {
                     let color_b = Color { a: 0.0, ..color_a };
 
                     draw2d::ColoredVertex {
-                        a_pos: entry.pos.as_f32(),
+                        a_pos: (self.player.position + entry.relative_pos).as_f32(),
                         a_color: Color::lerp(color_a, color_b, t),
                     }
                 })
@@ -491,7 +488,7 @@ impl geng::State for State {
                     let color_b = Color { a: 0.0, ..color_a };
 
                     draw2d::ColoredVertex {
-                        a_pos: entry.pos.as_f32(),
+                        a_pos: entry.world_pos.as_f32(),
                         a_color: Color::lerp(color_a, color_b, t),
                     }
                 })
@@ -503,15 +500,16 @@ impl geng::State for State {
             );
 
             // Cursor
+            let cursor_pos = self.player.cursor.pos + self.player.position;
             self.geng.draw2d().draw2d(
                 framebuffer,
                 camera,
-                &draw2d::Ellipse::circle(self.cursor.pos.as_f32(), 0.15, Rgba::BLACK),
+                &draw2d::Ellipse::circle(cursor_pos.as_f32(), 0.15, Rgba::BLACK),
             );
             self.geng.draw2d().draw2d(
                 framebuffer,
                 camera,
-                &draw2d::Ellipse::circle(self.cursor.pos.as_f32(), 0.1, Rgba::WHITE),
+                &draw2d::Ellipse::circle(cursor_pos.as_f32(), 0.1, Rgba::WHITE),
             );
 
             for text in &self.floating_texts {
