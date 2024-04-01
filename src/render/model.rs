@@ -16,6 +16,7 @@ impl ModelRender {
     pub fn draw(&self, model: &Model, framebuffer: &mut ugli::Framebuffer) {
         let camera = &model.camera;
 
+        self.draw_mannequins(model, framebuffer);
         self.draw_player(model, &model.player, framebuffer);
         self.draw_cursor(model, &model.player.cursor, framebuffer);
 
@@ -91,6 +92,33 @@ impl ModelRender {
             camera,
             &draw2d::Ellipse::circle(cursor_pos.as_f32(), 0.1, Rgba::WHITE),
         );
+    }
+
+    pub fn draw_mannequins(&self, model: &Model, framebuffer: &mut ugli::Framebuffer) {
+        for mannequin in &model.mannequins {
+            self.draw_mannequin(model, mannequin, framebuffer);
+        }
+    }
+
+    pub fn draw_mannequin(
+        &self,
+        model: &Model,
+        mannequin: &Mannequin,
+        framebuffer: &mut ugli::Framebuffer,
+    ) {
+        let camera = &model.camera;
+        let texture = &self.assets.mannequin;
+
+        let pos = geng_utils::pixel::pixel_perfect_aabb(
+            mannequin.collider.position.as_f32(),
+            vec2(0.5, 0.5),
+            texture.size(),
+            camera,
+            framebuffer.size().as_f32(),
+        );
+        self.geng
+            .draw2d()
+            .textured_quad(framebuffer, camera, pos, texture, Rgba::WHITE);
     }
 
     pub fn draw_player(&self, model: &Model, player: &Player, framebuffer: &mut ugli::Framebuffer) {

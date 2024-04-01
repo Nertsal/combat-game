@@ -1,6 +1,8 @@
 mod model;
+mod util;
 
 use model::ModelRender;
+pub use util::UtilRender;
 
 use crate::prelude::*;
 

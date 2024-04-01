@@ -1,7 +1,8 @@
+mod collider;
 mod event;
 mod logic;
 
-pub use event::Event;
+pub use self::{collider::*, event::Event};
 
 use crate::{prelude::*, util::parabola::Parabola};
 
@@ -13,8 +14,14 @@ pub struct Model {
     pub real_time: Time,
 
     pub player: Player,
+    pub mannequins: Vec<Mannequin>,
 
     pub floating_texts: Vec<FloatingText>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Mannequin {
+    pub collider: Collider,
 }
 
 #[derive(Debug, Clone)]
@@ -140,6 +147,9 @@ impl Model {
                     action: WeaponAction::Idle { target: vec2::ZERO },
                 },
             },
+            mannequins: vec![Mannequin {
+                collider: Collider::aabb(Aabb2::point(vec2(3.0, 2.0)).extend_uniform(0.3).map(r32)),
+            }],
 
             floating_texts: Vec::new(),
 
