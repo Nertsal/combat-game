@@ -40,6 +40,7 @@ pub struct Player {
 
 #[derive(Debug, Clone)]
 pub struct WeaponControl {
+    pub history: VecDeque<CursorEntry>,
     pub reach: Coord,
     pub acceleration: Coord,
     pub speed_max: Coord,
@@ -117,6 +118,7 @@ impl State {
                 velocity: vec2::ZERO,
                 target_move_dir: vec2::ZERO,
                 weapon: WeaponControl {
+                    history: VecDeque::new(),
                     acceleration: config.weapon.acceleration,
                     speed_max: config.weapon.speed_max,
                     reach: r32(2.0),
@@ -317,6 +319,21 @@ impl geng::State for State {
         }
         weapon.position =
             (weapon.position + weapon.velocity * delta_time).clamp_len(..=weapon.reach);
+
+        weapon
+            .history
+            .retain(|entry| self.real_time - entry.time < self.config.cursor.trail_time);
+        weapon.history.push_back(CursorEntry {
+            pos: self.player.position + weapon.position,
+            time: self.real_time,
+            state: weapon
+                .action
+                .as_ref()
+                .map_or(CursorState::Idle, |state| match state.intent {
+                    WeaponIntent::Attack => CursorState::Attack,
+                    WeaponIntent::Defend => CursorState::Defend,
+                }),
+        });
     }
 
     fn handle_event(&mut self, event: geng::Event) {
@@ -405,8 +422,10 @@ impl geng::State for State {
                 .translate(sword_pos.center()),
             );
 
+            // Trail
             let vertices = self
-                .cursor
+                .player
+                .weapon
                 .history
                 .iter()
                 .map(|entry| {
@@ -432,6 +451,18 @@ impl geng::State for State {
                 framebuffer,
                 camera,
                 &draw2d::Chain::new_gradient(vertices, 0.1, 0),
+            );
+
+            // Cursor
+            self.geng.draw2d().draw2d(
+                framebuffer,
+                camera,
+                &draw2d::Ellipse::circle(self.cursor.pos.as_f32(), 0.15, Rgba::BLACK),
+            );
+            self.geng.draw2d().draw2d(
+                framebuffer,
+                camera,
+                &draw2d::Ellipse::circle(self.cursor.pos.as_f32(), 0.1, Rgba::WHITE),
             );
 
             for text in &self.floating_texts {
