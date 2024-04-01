@@ -91,6 +91,8 @@ pub enum CursorState {
 
 impl State {
     pub fn new(geng: &Geng, assets: &Rc<Assets>, config: Config) -> Self {
+        geng.window().lock_cursor();
+
         Self {
             framebuffer_size: vec2(1, 1),
             texture: {
@@ -352,15 +354,19 @@ impl geng::State for State {
             }
         }
 
-        if let geng::Event::CursorMove { position } = event {
-            let position = position.as_f32();
-            let position = (position - self.texture_target.bottom_left())
-                / self.framebuffer_size.as_f32()
-                * self.texture.size().as_f32();
-            let position = self
-                .camera
-                .screen_to_world(self.texture.size().as_f32(), position)
-                .as_r32();
+        if let geng::Event::RawMouseMove { delta } = event {
+            let delta = delta.as_r32();
+            let world_delta = delta * r32(self.camera.fov / self.framebuffer_size.y as f32);
+            let position = self.cursor.pos + world_delta * self.config.cursor.sensitivity;
+
+            // let position = position.as_f32();
+            // let position = (position - self.texture_target.bottom_left())
+            //     / self.framebuffer_size.as_f32()
+            //     * self.texture.size().as_f32();
+            // let position = self
+            //     .camera
+            //     .screen_to_world(self.texture.size().as_f32(), position)
+            //     .as_r32();
 
             // Clamp by reach
             let position = self.player.position

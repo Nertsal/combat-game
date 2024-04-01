@@ -19,6 +19,7 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename = "Cursor")]
 pub struct CursorConfig {
+    pub sensitivity: Coord,
     pub trail_time: Time,
     pub fade_time: Time,
 }
