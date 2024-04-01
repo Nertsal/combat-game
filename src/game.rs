@@ -21,7 +21,7 @@ pub struct State {
 
 #[derive(Debug, Clone)]
 pub struct Cursor {
-    /// World position of the cursor.
+    /// Relative position of the cursor.
     pub pos: vec2<Coord>,
     pub history: VecDeque<CursorEntry>,
     pub state: CursorState,
@@ -284,7 +284,7 @@ impl geng::State for State {
             let t = action.arc.project(weapon.position);
             if t > R32::ONE {
                 // Motion finished - boost backwards
-                let boost = -weapon.position * r32(5.0) * action.power;
+                let boost = (self.player.cursor.pos - weapon.position) * r32(5.0) * action.power;
                 weapon.velocity = (weapon.velocity + boost).clamp_len(..=weapon.speed_max);
                 weapon.action = None;
             } else {
