@@ -13,7 +13,7 @@ impl Model {
                 self.player.cursor.history.push_back(CursorEntry {
                     world_pos: self.player.position + self.player.cursor.pos,
                     relative_pos: self.player.cursor.pos,
-                    time: self.real_time,
+                    time: self.game_time,
                     state: self.player.cursor.state,
                 });
             }

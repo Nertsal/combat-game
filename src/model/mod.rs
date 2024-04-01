@@ -12,6 +12,7 @@ pub struct Model {
 
     pub camera: Camera2d,
     pub real_time: Time,
+    pub game_time: Time,
 
     pub player: Player,
     pub mannequins: Vec<Mannequin>,
@@ -22,6 +23,8 @@ pub struct Model {
 #[derive(Debug, Clone)]
 pub struct Mannequin {
     pub collider: Collider,
+    /// Last time the mannequin got hit.
+    pub hit_time: Time,
 }
 
 #[derive(Debug, Clone)]
@@ -126,6 +129,7 @@ impl Model {
                 fov: 10.0,
             },
             real_time: Time::ZERO,
+            game_time: Time::ZERO,
 
             player: Player {
                 cursor: Cursor {
@@ -149,6 +153,7 @@ impl Model {
             },
             mannequins: vec![Mannequin {
                 collider: Collider::aabb(Aabb2::point(vec2(3.0, 2.0)).extend_uniform(0.3).map(r32)),
+                hit_time: Time::ZERO,
             }],
 
             floating_texts: Vec::new(),

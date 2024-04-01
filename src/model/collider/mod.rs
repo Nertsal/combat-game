@@ -29,6 +29,10 @@ impl Collider {
         }
     }
 
+    pub fn circle(position: vec2<Coord>, radius: Coord) -> Self {
+        Self::new(position, Shape::circle(radius))
+    }
+
     pub fn aabb(aabb: Aabb2<Coord>) -> Self {
         Self::new(aabb.center(), Shape::rectangle(aabb.size()))
     }

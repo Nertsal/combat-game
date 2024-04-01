@@ -5,12 +5,14 @@ use super::*;
 impl Model {
     pub fn update(&mut self, delta_time: Time) {
         self.real_time += delta_time;
+        self.game_time += delta_time;
 
         self.update_texts(delta_time);
         self.update_cursor(delta_time);
         self.control(delta_time);
         self.update_player(delta_time);
         self.update_weapon(delta_time);
+        self.weapon_hits(delta_time);
     }
 
     fn update_cursor(&mut self, _delta_time: Time) {
@@ -47,7 +49,7 @@ impl Model {
         self.player
             .cursor
             .history
-            .retain(|entry| self.real_time - entry.time < self.config.cursor.trail_time);
+            .retain(|entry| self.game_time - entry.time < self.config.cursor.trail_time);
     }
 
     fn control(&mut self, _delta_time: Time) {
@@ -152,11 +154,11 @@ impl Model {
 
         weapon
             .history
-            .retain(|entry| self.real_time - entry.time < self.config.cursor.trail_time);
+            .retain(|entry| self.game_time - entry.time < self.config.cursor.trail_time);
         weapon.history.push_back(CursorEntry {
             world_pos: self.player.position + weapon.position,
             relative_pos: weapon.position,
-            time: self.real_time,
+            time: self.game_time,
             state: match &weapon.action {
                 WeaponAction::Swing(WeaponSwing { intent, .. }) => match intent {
                     WeaponIntent::Attack => CursorState::Attack,
@@ -234,6 +236,32 @@ impl Model {
             initial_scale: r32(1.0),
             rotation: Angle::from_degrees(degrees),
         });
+    }
+
+    fn weapon_hits(&mut self, _delta_time: Time) {
+        let player = &mut self.player;
+
+        // TODO: Sword hitbox
+        let weapon_collider = Collider::circle(player.position + player.weapon.position, r32(0.1));
+
+        if let WeaponAction::Swing(swing) = &player.weapon.action {
+            for mannequin in &mut self.mannequins {
+                if self.game_time - mannequin.hit_time > r32(0.5)
+                    && weapon_collider.check(&mannequin.collider)
+                {
+                    mannequin.hit_time = self.game_time;
+
+                    let degrees = r32(thread_rng().gen_range(-15.0..=15.0));
+                    self.floating_texts.push(FloatingText {
+                        text: format!("{}", (swing.power.as_f32() * 10.0).round() as i64),
+                        pos: weapon_collider.position,
+                        lifetime: Bounded::new_max(r32(1.0)),
+                        initial_scale: r32(1.0),
+                        rotation: Angle::from_degrees(degrees),
+                    });
+                }
+            }
+        }
     }
 
     fn update_texts(&mut self, delta_time: Time) {

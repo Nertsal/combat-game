@@ -55,7 +55,7 @@ impl ModelRender {
             .history
             .iter()
             .map(|entry| {
-                let t = (model.real_time - entry.time - model.config.cursor.fade_time)
+                let t = (model.game_time - entry.time - model.config.cursor.fade_time)
                     .max(Time::ZERO)
                     / (model.config.cursor.trail_time - model.config.cursor.fade_time);
                 let t = crate::util::smoothstep(t).as_f32();
@@ -116,9 +116,16 @@ impl ModelRender {
             camera,
             framebuffer.size().as_f32(),
         );
+
+        let color_normal = Rgba::WHITE;
+        let color_hit = Rgba::RED;
+        let hit_t = (1.0 - (model.game_time - mannequin.hit_time).as_f32() / 0.5).clamp(0.0, 1.0);
+        let hit_t = crate::util::smoothstep(hit_t);
+        let color = Rgba::lerp(color_normal, color_hit, hit_t);
+
         self.geng
             .draw2d()
-            .textured_quad(framebuffer, camera, pos, texture, Rgba::WHITE);
+            .textured_quad(framebuffer, camera, pos, texture, color);
     }
 
     pub fn draw_player(&self, model: &Model, player: &Player, framebuffer: &mut ugli::Framebuffer) {
@@ -184,7 +191,7 @@ impl ModelRender {
             .history
             .iter()
             .map(|entry| {
-                let t = (model.real_time - entry.time - model.config.cursor.fade_time)
+                let t = (model.game_time - entry.time - model.config.cursor.fade_time)
                     .max(Time::ZERO)
                     / (model.config.cursor.trail_time - model.config.cursor.fade_time);
                 let t = crate::util::smoothstep(t).as_f32();
