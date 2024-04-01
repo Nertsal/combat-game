@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{prelude::*, util::parabola::Parabola};
 
 use std::collections::VecDeque;
 
@@ -41,8 +41,26 @@ pub struct Player {
 #[derive(Debug, Clone)]
 pub struct WeaponControl {
     pub reach: Coord,
+    pub acceleration: Coord,
+    pub speed_max: Coord,
     /// Relative position of the weapon tip.
     pub position: vec2<Coord>,
+    /// Relative velocity of the weapon tip.
+    pub velocity: vec2<Coord>,
+    pub action: Option<WeaponAction>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WeaponAction {
+    pub intent: WeaponIntent,
+    pub power: R32,
+    pub arc: Parabola<Coord>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum WeaponIntent {
+    Attack,
+    Defend,
 }
 
 #[derive(Debug, Clone)]
@@ -73,10 +91,6 @@ pub enum CursorState {
 impl State {
     pub fn new(geng: &Geng, assets: &Rc<Assets>, config: Config) -> Self {
         Self {
-            geng: geng.clone(),
-            assets: assets.clone(),
-            config,
-
             framebuffer_size: vec2(1, 1),
             texture: {
                 let mut texture = geng_utils::texture::new_texture(geng.ugli(), vec2(640, 360));
@@ -103,12 +117,20 @@ impl State {
                 velocity: vec2::ZERO,
                 target_move_dir: vec2::ZERO,
                 weapon: WeaponControl {
+                    acceleration: config.weapon.acceleration,
+                    speed_max: config.weapon.speed_max,
                     reach: r32(2.0),
                     position: vec2::ZERO,
+                    velocity: vec2::ZERO,
+                    action: None,
                 },
             },
 
             floating_texts: Vec::new(),
+
+            geng: geng.clone(),
+            assets: assets.clone(),
+            config,
         }
     }
 
@@ -134,6 +156,7 @@ impl State {
             .unwrap_or(0);
         let end = self.cursor.history.len() - 1 - end;
 
+        let mid = self.cursor.history[(start + end) / 2];
         let start = self.cursor.history[start];
         let end = self.cursor.history[end];
 
@@ -145,10 +168,10 @@ impl State {
         let power = power_t * (self.config.weapon.power_max - self.config.weapon.power_min)
             + self.config.weapon.power_min;
 
-        let text = match end.state {
+        let (intent, text) = match end.state {
             CursorState::Idle => return,
-            CursorState::Attack => "Slash",
-            CursorState::Defend => "Parry",
+            CursorState::Attack => (WeaponIntent::Attack, "Slash"),
+            CursorState::Defend => (WeaponIntent::Defend, "Parry"),
         };
 
         log::debug!(
@@ -158,6 +181,12 @@ impl State {
             pos.y,
             power
         );
+
+        self.player.weapon.action = Some(WeaponAction {
+            intent,
+            power,
+            arc: Parabola::new([start.pos, mid.pos, end.pos]),
+        });
 
         let degrees = r32(thread_rng().gen_range(-15.0..=15.0));
         self.floating_texts.push(FloatingText {
@@ -237,9 +266,34 @@ impl geng::State for State {
 
         self.player.position += self.player.velocity * delta_time;
 
-        let weapon_target =
-            (self.cursor.pos - self.player.position).clamp_len(..=self.player.weapon.reach);
-        self.player.weapon.position = weapon_target;
+        let weapon = &mut self.player.weapon;
+        if let Some(action) = &weapon.action {
+            let t = action.arc.project(weapon.position);
+            let projection = action.arc.get(t);
+            let tangent = action.arc.tangent(t);
+            let normal = projection - weapon.position;
+
+            let target_vel = (normal * r32(5.0)
+                + (tangent.normalize_or_zero() * r32(5.0) * action.power))
+                * r32(3.0);
+            let target_vel = target_vel.clamp_len(..=r32(2.0) * weapon.speed_max);
+
+            weapon.velocity +=
+                (target_vel - weapon.velocity).clamp_len(..=weapon.acceleration * delta_time);
+
+            if t > R32::ONE {
+                // Motion finished
+                weapon.action = None;
+            }
+        } else {
+            let target = (self.cursor.pos - self.player.position).clamp_len(..=weapon.reach);
+            let target_vel =
+                ((target - weapon.position) * r32(10.0)).clamp_len(..=weapon.speed_max);
+            weapon.velocity +=
+                (target_vel - weapon.velocity).clamp_len(..=weapon.acceleration * delta_time);
+        }
+        weapon.position =
+            (weapon.position + weapon.velocity * delta_time).clamp_len(..=weapon.reach);
     }
 
     fn handle_event(&mut self, event: geng::Event) {
@@ -375,6 +429,12 @@ impl geng::State for State {
                     transform,
                     color,
                 );
+            }
+
+            if let Some(action) = &self.player.weapon.action {
+                let chain = action.arc.map(R32::as_f32).chain(50);
+                let chain = draw2d::Chain::new(chain, 0.05, Rgba::BLUE, 0);
+                self.geng.draw2d().draw2d(framebuffer, &self.camera, &chain);
             }
         }
 

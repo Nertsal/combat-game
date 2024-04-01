@@ -26,6 +26,8 @@ pub struct CursorConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename = "Weapon")]
 pub struct WeaponConfig {
+    pub acceleration: Coord,
+    pub speed_max: Coord,
     pub power_min: R32,
     pub power_max: R32,
 }

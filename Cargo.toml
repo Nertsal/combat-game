@@ -9,5 +9,6 @@ edition = "2021"
 clap = { version = "4.5.1", features = ["derive"] }
 geng = "0.17.2"
 geng-utils = "0.3.0"
+roots = "0.0.8"
 serde = { version = "1.0.197", features = ["derive"] }
 

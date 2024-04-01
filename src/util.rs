@@ -1,3 +1,5 @@
+pub mod parabola;
+
 use geng::prelude::*;
 
 pub fn smoothstep<T: Float>(t: T) -> T {
