@@ -413,8 +413,18 @@ impl geng::State for State {
             );
 
             let mut angle = offset.as_f32().arg();
-            if let CursorState::Defend = self.cursor.state {
+            if let Some(WeaponIntent::Defend) = self
+                .player
+                .weapon
+                .action
+                .as_ref()
+                .map(|action| action.intent)
+            {
                 angle += Angle::from_degrees(50.0);
+            } else if let CursorState::Defend = self.cursor.state {
+                if self.player.weapon.action.is_none() {
+                    angle += Angle::from_degrees(50.0);
+                }
             }
 
             self.geng.draw2d().draw2d(
@@ -428,7 +438,38 @@ impl geng::State for State {
                 .translate(sword_pos.center()),
             );
 
-            // Trail
+            // Cursor trail
+            let vertices = self
+                .cursor
+                .history
+                .iter()
+                .map(|entry| {
+                    let t = (self.real_time - entry.time - self.config.cursor.fade_time)
+                        .max(Time::ZERO)
+                        / (self.config.cursor.trail_time - self.config.cursor.fade_time);
+                    let t = crate::util::smoothstep(t).as_f32();
+
+                    let mut color_a = match entry.state {
+                        CursorState::Idle => Rgba::TRANSPARENT_BLACK, // self.config.palette.idle,
+                        CursorState::Attack => self.config.palette.attack,
+                        CursorState::Defend => self.config.palette.defend,
+                    };
+                    color_a.a *= 0.5;
+                    let color_b = Color { a: 0.0, ..color_a };
+
+                    draw2d::ColoredVertex {
+                        a_pos: entry.pos.as_f32(),
+                        a_color: Color::lerp(color_a, color_b, t),
+                    }
+                })
+                .collect();
+            self.geng.draw2d().draw2d(
+                framebuffer,
+                camera,
+                &draw2d::Chain::new_gradient(vertices, 0.07, 0),
+            );
+
+            // Weapon trail
             let vertices = self
                 .player
                 .weapon
@@ -491,11 +532,11 @@ impl geng::State for State {
                 );
             }
 
-            if let Some(action) = &self.player.weapon.action {
-                let chain = action.arc.map(R32::as_f32).chain(50);
-                let chain = draw2d::Chain::new(chain, 0.05, Rgba::BLUE, 0);
-                self.geng.draw2d().draw2d(framebuffer, &self.camera, &chain);
-            }
+            // if let Some(action) = &self.player.weapon.action {
+            //     let chain = action.arc.map(R32::as_f32).chain(50);
+            //     let chain = draw2d::Chain::new(chain, 0.05, Rgba::BLUE, 0);
+            //     self.geng.draw2d().draw2d(framebuffer, &self.camera, &chain);
+            // }
         }
 
         let mut draw = geng_utils::texture::DrawTexture::new(&self.texture);
