@@ -6,38 +6,39 @@ impl Model {
     pub fn update(&mut self, delta_time: Time) {
         self.real_time += delta_time;
 
-        for text in &mut self.floating_texts {
-            text.lifetime.change(-delta_time);
-        }
-        self.floating_texts
-            .retain(|text| text.lifetime.is_above_min());
+        self.update_texts(delta_time);
+        self.update_cursor(delta_time);
+        self.control(delta_time);
+        self.update_player(delta_time);
+        self.update_weapon(delta_time);
+    }
 
-        {
-            // Validate cursor state (in case some event is missed, e.g. when window loses focus)
-            let attack =
-                geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.attack);
-            let defend =
-                geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.defend);
-            match self.player.cursor.state {
-                CursorState::Idle => {
-                    if attack {
-                        self.player.cursor.state = CursorState::Attack;
-                    } else if defend {
-                        self.player.cursor.state = CursorState::Defend;
-                    }
+    fn update_cursor(&mut self, _delta_time: Time) {
+        // Validate cursor state (in case some event is missed, e.g. when window loses focus)
+        let attack =
+            geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.attack);
+        let defend =
+            geng_utils::key::is_key_pressed(self.geng.window(), &self.config.controls.defend);
+        match self.player.cursor.state {
+            CursorState::Idle => {
+                if attack {
+                    self.player.cursor.state = CursorState::Attack;
+                } else if defend {
+                    self.player.cursor.state = CursorState::Defend;
                 }
-                CursorState::Attack => {
-                    if !attack {
-                        self.player.cursor.state = CursorState::Idle;
-                    }
+            }
+            CursorState::Attack => {
+                if !attack {
+                    self.player.cursor.state = CursorState::Idle;
                 }
-                CursorState::Defend => {
-                    if !defend {
-                        self.player.cursor.state = CursorState::Idle;
-                    }
+            }
+            CursorState::Defend => {
+                if !defend {
+                    self.player.cursor.state = CursorState::Idle;
                 }
             }
         }
+
         if self.player.cursor.state != self.player.cursor.last_state {
             self.check_action();
             self.player.cursor.last_state = self.player.cursor.state;
@@ -47,7 +48,9 @@ impl Model {
             .cursor
             .history
             .retain(|entry| self.real_time - entry.time < self.config.cursor.trail_time);
+    }
 
+    fn control(&mut self, _delta_time: Time) {
         // Update weapon action
         if !self.player.weapon.action.swinging() {
             let start = self
@@ -93,13 +96,17 @@ impl Model {
             move_dir.x += 1.0;
         }
         self.player.target_move_dir = move_dir.as_r32();
+    }
 
+    fn update_player(&mut self, delta_time: Time) {
         let target_velocity = self.player.target_move_dir * self.config.player.walk_speed;
         self.player.velocity += (target_velocity - self.player.velocity)
             .clamp_len(..=self.config.player.acceleration * delta_time);
 
         self.player.position += self.player.velocity * delta_time;
+    }
 
+    fn update_weapon(&mut self, delta_time: Time) {
         let weapon = &mut self.player.weapon;
         match &weapon.action {
             WeaponAction::Swing(swing) => {
@@ -227,5 +234,13 @@ impl Model {
             initial_scale: r32(1.0),
             rotation: Angle::from_degrees(degrees),
         });
+    }
+
+    fn update_texts(&mut self, delta_time: Time) {
+        for text in &mut self.floating_texts {
+            text.lifetime.change(-delta_time);
+        }
+        self.floating_texts
+            .retain(|text| text.lifetime.is_above_min());
     }
 }
