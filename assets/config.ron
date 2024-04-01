@@ -4,8 +4,8 @@ Config(
         fade_time: 0.2,
     ),
     weapon: Weapon(
-        acceleration: 20.0,
-        speed_max: 10.0,
+        acceleration: 30.0,
+        speed_max: 7.0,
         power_min: 1.0,
         power_max: 5.0,
     ),

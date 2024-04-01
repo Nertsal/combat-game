@@ -182,15 +182,21 @@ impl State {
             power
         );
 
-        self.player.weapon.action = Some(WeaponAction {
-            intent,
-            power,
-            arc: Parabola::new([start.pos, mid.pos, end.pos]),
-        });
+        let weapon = &mut self.player.weapon;
+        let arc = Parabola::new([start.pos, mid.pos, end.pos]);
+        weapon.action = Some(WeaponAction { intent, power, arc });
+        // Boost
+        let t = arc.project(weapon.position);
+        let projection = arc.get(t);
+        let tangent = arc.tangent(t);
+        let normal = projection - weapon.position;
+        let boost =
+            (normal * r32(3.0) + (tangent.normalize_or_zero() * r32(5.0) * power)) * r32(3.0);
+        weapon.velocity = (weapon.velocity + boost).clamp_len(..=weapon.speed_max);
 
         let degrees = r32(thread_rng().gen_range(-15.0..=15.0));
         self.floating_texts.push(FloatingText {
-            text: format!("{} {}", text, power.ceil()),
+            text: format!("{} {}", text, power.round()),
             pos,
             lifetime: Bounded::new_max(r32(0.5)),
             initial_scale: r32(1.0),
@@ -276,7 +282,7 @@ impl geng::State for State {
             let target_vel = (normal * r32(5.0)
                 + (tangent.normalize_or_zero() * r32(5.0) * action.power))
                 * r32(3.0);
-            let target_vel = target_vel.clamp_len(..=r32(2.0) * weapon.speed_max);
+            let target_vel = target_vel.clamp_len(..=r32(1.5) * weapon.speed_max);
 
             weapon.velocity +=
                 (target_vel - weapon.velocity).clamp_len(..=weapon.acceleration * delta_time);
@@ -286,7 +292,24 @@ impl geng::State for State {
                 weapon.action = None;
             }
         } else {
-            let target = (self.cursor.pos - self.player.position).clamp_len(..=weapon.reach);
+            let target = (if let CursorState::Idle = self.cursor.state {
+                self.cursor.pos - self.player.position
+            } else {
+                let start = self
+                    .cursor
+                    .history
+                    .iter()
+                    .rev()
+                    .position(|entry| entry.state != self.cursor.last_state)
+                    .map(|len| self.cursor.history.len() - len)
+                    .unwrap_or(0);
+                if let Some(start) = self.cursor.history.get(start) {
+                    start.pos
+                } else {
+                    weapon.position
+                }
+            })
+            .clamp_len(..=weapon.reach);
             let target_vel =
                 ((target - weapon.position) * r32(10.0)).clamp_len(..=weapon.speed_max);
             weapon.velocity +=
