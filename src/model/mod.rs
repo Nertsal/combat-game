@@ -52,6 +52,7 @@ pub struct WeaponControl {
     pub history: VecDeque<CursorEntry>,
     pub reach: Coord,
     pub acceleration: Coord,
+    pub swing_boost: Coord,
     pub speed_max: Coord,
     /// Relative position of the weapon tip.
     pub position: vec2<Coord>,
@@ -144,6 +145,7 @@ impl Model {
                 weapon: WeaponControl {
                     history: VecDeque::new(),
                     acceleration: config.weapon.acceleration,
+                    swing_boost: config.weapon.swing_boost,
                     speed_max: config.weapon.speed_max,
                     reach: r32(2.0),
                     position: vec2::ZERO,

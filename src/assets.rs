@@ -30,6 +30,7 @@ pub struct CursorConfig {
 #[serde(rename = "Weapon")]
 pub struct WeaponConfig {
     pub acceleration: Coord,
+    pub swing_boost: Coord,
     pub speed_max: Coord,
     pub power_min: R32,
     pub power_max: R32,

@@ -5,7 +5,8 @@ Config(
         fade_time: 0.2,
     ),
     weapon: Weapon(
-        acceleration: 30.0,
+        acceleration: 50.0,
+        swing_boost: 1.5,
         speed_max: 7.0,
         power_min: 1.0,
         power_max: 5.0,

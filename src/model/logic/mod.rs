@@ -124,14 +124,16 @@ impl Model {
                     let projection = swing.arc.get(t);
                     let tangent = swing.arc.tangent(t);
                     let normal = projection - weapon.position;
+                    let normal = normal * normal.len();
 
-                    let target_vel = (normal * r32(5.0)
-                        + (tangent.normalize_or_zero() * r32(5.0) * swing.power))
-                        * r32(3.0);
+                    let acceleration = weapon.acceleration * weapon.swing_boost * swing.power;
+
+                    let target_vel =
+                        (normal + (tangent.normalize_or_zero())) * acceleration / r32(10.0);
                     let target_vel = target_vel.clamp_len(..=r32(1.5) * weapon.speed_max);
 
-                    weapon.velocity += (target_vel - weapon.velocity)
-                        .clamp_len(..=weapon.acceleration * delta_time);
+                    weapon.velocity +=
+                        (target_vel - weapon.velocity).clamp_len(..=acceleration * delta_time);
                 }
             }
             WeaponAction::Idle { target } => {
